@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg width="200" height="200" version="1.1" xmlns="http://www.w3.org/2000/svg">
+  <!-- Face shape -->
+  <path d="M40,100 Q40,40 100,40 Q160,40 160,100 Q160,160 100,180 Q40,160 40,100" fill="#FFE0BD"/>
+  
+  <!-- Hair -->
+  <path d="M40,80 Q40,20 100,20 Q160,20 160,80" fill="#4A3728"/>
+  <path d="M40,70 Q60,50 100,45 Q140,50 160,70" fill="#4A3728"/>
+  
+  <!-- Beard -->
+  <path d="M60,120 Q100,140 140,120 L140,150 Q100,170 60,150 Z" fill="#4A3728"/>
+  
+  <!-- Eyes -->
+  <g transform="translate(75,85)">
+    <ellipse cx="0" cy="0" rx="12" ry="8" fill="#ffffff"/>
+    <circle cx="0" cy="0" r="6" fill="#3B2417"/>
+  </g>
+  <g transform="translate(125,85)">
+    <ellipse cx="0" cy="0" rx="12" ry="8" fill="#ffffff"/>
+    <circle cx="0" cy="0" r="6" fill="#3B2417"/>
+  </g>
+  
+  <!-- Eyebrows -->
+  <path d="M65,70 Q75,65 85,70" stroke="#4A3728" stroke-width="3" fill="none"/>
+  <path d="M115,70 Q125,65 135,70" stroke="#4A3728" stroke-width="3" fill="none"/>
+  
+  <!-- Nose (red clown nose) -->
+  <circle cx="100" cy="110" r="15" fill="#FF0000"/>
+  <circle cx="105" cy="107" r="5" fill="#FF6666"/>
+  
+  <!-- Mouth -->
+  <path d="M80,130 Q100,140 120,130" fill="none" stroke="#CC9B8B" stroke-width="3"/>
+</svg> 
