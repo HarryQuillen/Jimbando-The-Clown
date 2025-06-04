@@ -1,13 +1,14 @@
 import Phaser from 'phaser';
 import { TitleScene } from './scenes/TitleScene';
 import { GameScene } from './scenes/GameScene';
+import { DeathScene } from './scenes/DeathScene';
+import { UsernameScene } from './scenes/UsernameScene';
 
 const config: Phaser.Types.Core.GameConfig = {
     type: Phaser.AUTO,
     width: 800,
     height: 600,
     parent: 'game',
-    backgroundColor: '#000000',
     physics: {
         default: 'arcade',
         arcade: {
@@ -15,7 +16,10 @@ const config: Phaser.Types.Core.GameConfig = {
             debug: false
         }
     },
-    scene: [TitleScene, GameScene]
+    input: {
+        keyboard: true
+    },
+    scene: [UsernameScene, TitleScene, GameScene, DeathScene]
 };
 
 new Phaser.Game(config); 

@@ -18,13 +18,15 @@ jobs:
           node-version: '18'
 
       - name: Install Dependencies
+        working-directory: website/game
         run: npm install
 
       - name: Build
+        working-directory: website/game
         run: npm run build
 
       - name: Deploy to GitHub Pages
         uses: JamesIves/github-pages-deploy-action@v4
         with:
-          folder: dist
+          folder: website
           branch: gh-pages 
