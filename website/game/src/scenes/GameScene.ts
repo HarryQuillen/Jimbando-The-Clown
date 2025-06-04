@@ -452,7 +452,7 @@ export class GameScene extends Phaser.Scene {
 
     private async saveScore(username: string, score: number) {
         try {
-            const response = await fetch('https://api.jimbando.com/scores', {
+            const response = await fetch('https://jimbando-the-clown.onrender.com/scores', {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',

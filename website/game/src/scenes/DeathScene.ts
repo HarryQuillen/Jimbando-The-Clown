@@ -77,7 +77,7 @@ export class DeathScene extends Phaser.Scene {
 
     private async loadLeaderboard() {
         try {
-            const response = await fetch('https://api.jimbando.com/scores/top');
+            const response = await fetch('https://jimbando-the-clown.onrender.com/scores/top');
             if (response.ok) {
                 this.leaderboardData = await response.json();
             }
