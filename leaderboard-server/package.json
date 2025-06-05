@@ -10,7 +10,9 @@
   },
   "scripts": {
     "start": "node index.js",
-    "build": "yarn install",
+    "prebuild": "echo 'Installing dependencies...'",
+    "build": "yarn install --frozen-lockfile",
+    "postbuild": "echo 'Build completed successfully'",
     "dev": "nodemon index.js"
   },
   "keywords": [],
