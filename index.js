@@ -1,51 +1,105 @@
 import express from 'express';
 import cors from 'cors';
-import sqlite3 from 'sqlite3';
-import { open } from 'sqlite';
+import { MongoClient } from 'mongodb';
+import dotenv from 'dotenv';
+
+// Load environment variables
+dotenv.config();
 
 const app = express();
-const PORT = 3001;
+const PORT = process.env.PORT || 3001;
 
 app.use(cors());
 app.use(express.json());
 
+// MongoDB connection
+const uri = process.env.MONGODB_URI;
+if (!uri) {
+    console.error('MONGODB_URI environment variable is not set');
+    process.exit(1);
+}
+
+const client = new MongoClient(uri);
 let db;
-(async () => {
-  db = await open({
-    filename: './scores.db',
-    driver: sqlite3.Database
-  });
-  await db.run(`
-    CREATE TABLE IF NOT EXISTS scores (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      username TEXT NOT NULL,
-      score INTEGER NOT NULL,
-      timestamp TEXT NOT NULL
-    )
-  `);
-})();
+
+// Connect to MongoDB before starting the server
+async function startServer() {
+    try {
+        await client.connect();
+        console.log('Connected to MongoDB Atlas');
+        
+        db = client.db('jimbando');
+        
+        // Create indexes if they don't exist
+        await db.collection('scores').createIndex({ score: -1 });
+        await db.collection('scores').createIndex({ timestamp: 1 });
+        
+        // Start listening only after successful database connection
+        app.listen(PORT, () => {
+            console.log(`Leaderboard server running on port ${PORT}`);
+        });
+    } catch (err) {
+        console.error('Failed to connect to MongoDB:', err);
+        process.exit(1);
+    }
+}
+
+// Middleware to check database connection
+const checkDbConnection = (req, res, next) => {
+    if (!db) {
+        return res.status(500).json({ error: 'Database connection not established' });
+    }
+    next();
+};
 
 // Add a new score
-app.post('/scores', async (req, res) => {
-  const { username, score, timestamp } = req.body;
-  if (!username || typeof score !== 'number' || !timestamp) {
-    return res.status(400).json({ error: 'Invalid payload' });
-  }
-  await db.run(
-    'INSERT INTO scores (username, score, timestamp) VALUES (?, ?, ?)',
-    username, score, timestamp
-  );
-  res.json({ success: true });
+app.post('/scores', checkDbConnection, async (req, res) => {
+    try {
+        const { username, score, timestamp } = req.body;
+        if (!username || typeof score !== 'number' || !timestamp) {
+            return res.status(400).json({ error: 'Invalid payload' });
+        }
+
+        await db.collection('scores').insertOne({
+            username,
+            score,
+            timestamp
+        });
+
+        res.json({ success: true });
+    } catch (error) {
+        console.error('Error saving score:', error);
+        res.status(500).json({ error: 'Failed to save score' });
+    }
 });
 
 // Get top 5 scores
-app.get('/scores/top', async (req, res) => {
-  const rows = await db.all(
-    'SELECT username, score FROM scores ORDER BY score DESC, timestamp ASC LIMIT 5'
-  );
-  res.json(rows);
+app.get('/scores/top', checkDbConnection, async (req, res) => {
+    try {
+        const rows = await db.collection('scores')
+            .find({})
+            .sort({ score: -1, timestamp: 1 })
+            .limit(5)
+            .toArray();
+            
+        res.json(rows);
+    } catch (error) {
+        console.error('Error fetching scores:', error);
+        res.status(500).json({ error: 'Failed to fetch scores' });
+    }
 });
 
-app.listen(PORT, () => {
-  console.log(`Leaderboard server running on http://localhost:${PORT}`);
-}); 
+// Handle graceful shutdown
+process.on('SIGINT', async () => {
+    try {
+        await client.close();
+        console.log('MongoDB connection closed');
+        process.exit(0);
+    } catch (err) {
+        console.error('Error closing MongoDB connection:', err);
+        process.exit(1);
+    }
+});
+
+// Start the server
+startServer(); 
