@@ -21,15 +21,17 @@ if (!uri) {
 
 // MongoDB connection options
 const options = {
-    useNewUrlParser: true,
-    useUnifiedTopology: true,
-    maxPoolSize: 10,
-    serverSelectionTimeoutMS: 5000,
+    connectTimeoutMS: 30000,
     socketTimeoutMS: 45000,
 };
 
 const client = new MongoClient(uri, options);
 let db;
+
+// Health check endpoint
+app.get('/', (req, res) => {
+    res.json({ status: 'ok' });
+});
 
 // Connect to MongoDB before starting the server
 async function startServer() {
@@ -41,15 +43,29 @@ async function startServer() {
             console.log('Connected to MongoDB Atlas');
             
             db = client.db('jimbando');
+            console.log('Selected database: jimbando');
             
             // Create indexes if they don't exist
             await db.collection('scores').createIndex({ score: -1 });
             await db.collection('scores').createIndex({ timestamp: 1 });
+            console.log('Created indexes on scores collection');
             
             // Start listening only after successful database connection
-            app.listen(PORT, () => {
+            const server = app.listen(PORT, () => {
                 console.log(`Leaderboard server running on port ${PORT}`);
             });
+
+            // Handle server shutdown
+            process.on('SIGTERM', () => {
+                console.log('SIGTERM received. Closing server...');
+                server.close(async () => {
+                    console.log('Server closed. Closing MongoDB connection...');
+                    await client.close();
+                    console.log('MongoDB connection closed');
+                    process.exit(0);
+                });
+            });
+
             return; // Successfully connected and started
         } catch (err) {
             console.error(`Failed to connect to MongoDB (attempt ${6 - retries}/5):`, err);
@@ -106,18 +122,6 @@ app.get('/scores/top', checkDbConnection, async (req, res) => {
     } catch (error) {
         console.error('Error fetching scores:', error);
         res.status(500).json({ error: 'Failed to fetch scores' });
-    }
-});
-
-// Handle graceful shutdown
-process.on('SIGINT', async () => {
-    try {
-        await client.close();
-        console.log('MongoDB connection closed');
-        process.exit(0);
-    } catch (err) {
-        console.error('Error closing MongoDB connection:', err);
-        process.exit(1);
     }
 });
 
