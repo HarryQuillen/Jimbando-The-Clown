@@ -31,13 +31,10 @@ if (!uri) {
     process.exit(1);
 }
 
-// MongoDB connection options
+// MongoDB connection options - minimal set for v6+
 const options = {
     connectTimeoutMS: 30000,
-    socketTimeoutMS: 45000,
-    serverSelectionTimeoutMS: 30000,
-    waitQueueTimeoutMS: 30000,
-    keepAlive: true,
+    socketTimeoutMS: 45000
 };
 
 const client = new MongoClient(uri, options);
