@@ -9,6 +9,9 @@ dotenv.config();
 const app = express();
 const PORT = process.env.PORT || 3001;
 
+// Enable trust proxy for Render's infrastructure
+app.set('trust proxy', 1);
+
 app.use(cors());
 app.use(express.json());
 
@@ -32,13 +35,21 @@ if (!uri) {
 const options = {
     connectTimeoutMS: 30000,
     socketTimeoutMS: 45000,
+    serverSelectionTimeoutMS: 30000,
+    waitQueueTimeoutMS: 30000,
+    keepAlive: true,
 };
 
 const client = new MongoClient(uri, options);
 let db;
+let isConnecting = false;
+let server;
 
-// Connect to MongoDB before starting the server
-async function startServer() {
+// Connect to MongoDB
+async function connectToMongoDB() {
+    if (isConnecting) return;
+    isConnecting = true;
+    
     let retries = 5;
     while (retries > 0) {
         try {
@@ -54,40 +65,87 @@ async function startServer() {
             await db.collection('scores').createIndex({ timestamp: 1 });
             console.log('Created indexes on scores collection');
             
-            // Start listening only after successful database connection
-            const server = app.listen(PORT, () => {
-                console.log(`Leaderboard server running on port ${PORT}`);
-            });
-
-            // Handle server shutdown
-            process.on('SIGTERM', () => {
-                console.log('SIGTERM received. Closing server...');
-                server.close(async () => {
-                    console.log('Server closed. Closing MongoDB connection...');
-                    await client.close();
-                    console.log('MongoDB connection closed');
-                    process.exit(0);
-                });
-            });
-
-            return; // Successfully connected and started
+            isConnecting = false;
+            return true;
         } catch (err) {
             console.error(`Failed to connect to MongoDB (attempt ${6 - retries}/5):`, err);
             retries--;
             if (retries === 0) {
-                console.error('All connection attempts failed. Exiting.');
-                process.exit(1);
+                console.error('All connection attempts failed.');
+                isConnecting = false;
+                return false;
             }
-            // Wait 5 seconds before retrying
             await new Promise(resolve => setTimeout(resolve, 5000));
         }
     }
 }
 
+// Start the server
+async function startServer() {
+    try {
+        // Try to connect to MongoDB first
+        const connected = await connectToMongoDB();
+        if (!connected) {
+            console.error('Could not establish initial MongoDB connection');
+            process.exit(1);
+        }
+        
+        // Start the server
+        server = app.listen(PORT, () => {
+            console.log(`Leaderboard server running on port ${PORT}`);
+        });
+
+        // Handle server shutdown
+        process.on('SIGTERM', () => {
+            console.log('SIGTERM received. Starting graceful shutdown...');
+            shutdown();
+        });
+
+        process.on('SIGINT', () => {
+            console.log('SIGINT received. Starting graceful shutdown...');
+            shutdown();
+        });
+
+    } catch (err) {
+        console.error('Failed to start server:', err);
+        process.exit(1);
+    }
+}
+
+// Graceful shutdown function
+async function shutdown() {
+    try {
+        if (server) {
+            await new Promise((resolve) => {
+                server.close(resolve);
+            });
+            console.log('Server closed');
+        }
+        
+        if (client) {
+            await client.close();
+            console.log('MongoDB connection closed');
+        }
+        
+        process.exit(0);
+    } catch (err) {
+        console.error('Error during shutdown:', err);
+        process.exit(1);
+    }
+}
+
 // Middleware to check database connection
-const checkDbConnection = (req, res, next) => {
+const checkDbConnection = async (req, res, next) => {
     if (!db) {
-        return res.status(500).json({ error: 'Database connection not established' });
+        try {
+            const connected = await connectToMongoDB();
+            if (!connected) {
+                return res.status(500).json({ error: 'Database connection not established' });
+            }
+        } catch (error) {
+            console.error('Error reconnecting to database:', error);
+            return res.status(500).json({ error: 'Database connection failed' });
+        }
     }
     next();
 };
