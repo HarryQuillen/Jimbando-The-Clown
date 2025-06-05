@@ -7,10 +7,12 @@ import dotenv from 'dotenv';
 dotenv.config();
 
 const app = express();
-const PORT = process.env.PORT || 3001;
 
-// Enable trust proxy for Render's infrastructure
-app.set('trust proxy', 1);
+// Ensure we use Render's PORT environment variable
+const PORT = process.env.PORT || 10000;
+
+// Log the port we're using
+console.log(`Server will listen on port ${PORT}`);
 
 app.use(cors());
 app.use(express.json());
@@ -90,8 +92,9 @@ async function startServer() {
         }
         
         // Start the server
-        server = app.listen(PORT, () => {
+        server = app.listen(PORT, '0.0.0.0', () => {
             console.log(`Leaderboard server running on port ${PORT}`);
+            console.log(`Server is listening on all network interfaces`);
         });
 
         // Handle server shutdown
