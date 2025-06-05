@@ -8,11 +8,12 @@ dotenv.config();
 
 const app = express();
 
-// Ensure we use Render's PORT environment variable
-const PORT = process.env.PORT || 10000;
+// Get port from environment variable
+const PORT = parseInt(process.env.PORT || '10000', 10);
 
-// Log the port we're using
-console.log(`Server will listen on port ${PORT}`);
+console.log('Starting server initialization...');
+console.log(`PORT environment variable: ${process.env.PORT}`);
+console.log(`Using port: ${PORT}`);
 
 app.use(cors());
 app.use(express.json());
@@ -91,10 +92,19 @@ async function startServer() {
             process.exit(1);
         }
         
-        // Start the server
+        // Create server but don't start listening yet
         server = app.listen(PORT, '0.0.0.0', () => {
-            console.log(`Leaderboard server running on port ${PORT}`);
-            console.log(`Server is listening on all network interfaces`);
+            console.log(`Server is running at http://0.0.0.0:${PORT}`);
+            console.log('Server is listening on all available network interfaces');
+        });
+
+        // Log any server errors
+        server.on('error', (error) => {
+            console.error('Server error:', error);
+            if (error.code === 'EADDRINUSE') {
+                console.error(`Port ${PORT} is already in use`);
+            }
+            process.exit(1);
         });
 
         // Handle server shutdown
@@ -190,4 +200,5 @@ app.get('/scores/top', checkDbConnection, async (req, res) => {
 });
 
 // Start the server
+console.log('Calling startServer()...');
 startServer(); 
