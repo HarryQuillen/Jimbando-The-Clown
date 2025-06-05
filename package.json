@@ -2,12 +2,14 @@
   "name": "leaderboard-server",
   "version": "1.0.0",
   "type": "module",
+  "private": true,
   "main": "index.js",
   "engines": {
     "node": ">=18.0.0"
   },
   "scripts": {
     "start": "node index.js",
+    "build": "echo 'No build step needed'",
     "dev": "nodemon index.js"
   },
   "dependencies": {
