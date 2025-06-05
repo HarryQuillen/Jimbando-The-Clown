@@ -12,6 +12,15 @@ const PORT = process.env.PORT || 3001;
 app.use(cors());
 app.use(express.json());
 
+// Health check endpoint
+app.get('/', (req, res) => {
+    res.json({ 
+        status: 'ok',
+        version: '1.0.1',
+        serverTime: new Date().toISOString()
+    });
+});
+
 // MongoDB connection
 const uri = process.env.MONGODB_URI;
 if (!uri) {
@@ -27,11 +36,6 @@ const options = {
 
 const client = new MongoClient(uri, options);
 let db;
-
-// Health check endpoint
-app.get('/', (req, res) => {
-    res.json({ status: 'ok' });
-});
 
 // Connect to MongoDB before starting the server
 async function startServer() {
