@@ -7,10 +7,19 @@ import dotenv from 'dotenv';
 dotenv.config();
 
 const app = express();
-const PORT = 3001;
+const PORT = process.env.PORT || 3001;
 
 app.use(cors());
 app.use(express.json());
+
+// Health check endpoint
+app.get('/', (req, res) => {
+    res.json({ 
+        status: 'ok',
+        version: '1.0.1',
+        serverTime: new Date().toISOString()
+    });
+});
 
 // MongoDB connection
 const uri = process.env.MONGODB_URI;
@@ -19,28 +28,59 @@ if (!uri) {
     process.exit(1);
 }
 
-const client = new MongoClient(uri);
+// MongoDB connection options
+const options = {
+    connectTimeoutMS: 30000,
+    socketTimeoutMS: 45000,
+};
+
+const client = new MongoClient(uri, options);
 let db;
 
 // Connect to MongoDB before starting the server
 async function startServer() {
-    try {
-        await client.connect();
-        console.log('Connected to MongoDB Atlas');
-        
-        db = client.db('jimbando');
-        
-        // Create indexes if they don't exist
-        await db.collection('scores').createIndex({ score: -1 });
-        await db.collection('scores').createIndex({ timestamp: 1 });
-        
-        // Start listening only after successful database connection
-        app.listen(PORT, () => {
-            console.log(`Leaderboard server running on http://localhost:${PORT}`);
-        });
-    } catch (err) {
-        console.error('Failed to connect to MongoDB:', err);
-        process.exit(1);
+    let retries = 5;
+    while (retries > 0) {
+        try {
+            console.log('Attempting to connect to MongoDB Atlas...');
+            await client.connect();
+            console.log('Connected to MongoDB Atlas');
+            
+            db = client.db('jimbando');
+            console.log('Selected database: jimbando');
+            
+            // Create indexes if they don't exist
+            await db.collection('scores').createIndex({ score: -1 });
+            await db.collection('scores').createIndex({ timestamp: 1 });
+            console.log('Created indexes on scores collection');
+            
+            // Start listening only after successful database connection
+            const server = app.listen(PORT, () => {
+                console.log(`Leaderboard server running on port ${PORT}`);
+            });
+
+            // Handle server shutdown
+            process.on('SIGTERM', () => {
+                console.log('SIGTERM received. Closing server...');
+                server.close(async () => {
+                    console.log('Server closed. Closing MongoDB connection...');
+                    await client.close();
+                    console.log('MongoDB connection closed');
+                    process.exit(0);
+                });
+            });
+
+            return; // Successfully connected and started
+        } catch (err) {
+            console.error(`Failed to connect to MongoDB (attempt ${6 - retries}/5):`, err);
+            retries--;
+            if (retries === 0) {
+                console.error('All connection attempts failed. Exiting.');
+                process.exit(1);
+            }
+            // Wait 5 seconds before retrying
+            await new Promise(resolve => setTimeout(resolve, 5000));
+        }
     }
 }
 
@@ -89,17 +129,5 @@ app.get('/scores/top', checkDbConnection, async (req, res) => {
     }
 });
 
-// Handle graceful shutdown
-process.on('SIGINT', async () => {
-    try {
-        await client.close();
-        console.log('MongoDB connection closed');
-        process.exit(0);
-    } catch (err) {
-        console.error('Error closing MongoDB connection:', err);
-        process.exit(1);
-    }
-});
-
 // Start the server
-startServer();
+startServer(); 
