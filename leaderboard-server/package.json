@@ -5,10 +5,10 @@
   "private": true,
   "main": "index.js",
   "engines": {
-    "node": "18.x"
+    "node": "18.17.0"
   },
   "scripts": {
-    "start": "node index.js",
+    "start": "node --tls-min-v1.2 index.js",
     "dev": "nodemon index.js"
   },
   "dependencies": {

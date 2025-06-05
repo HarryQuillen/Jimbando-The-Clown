@@ -28,18 +28,32 @@ app.get('/', (req, res) => {
 });
 
 // MongoDB connection
-const uri = process.env.MONGODB_URI;
+let uri = process.env.MONGODB_URI;
 if (!uri) {
     console.error('MONGODB_URI environment variable is not set');
     process.exit(1);
 }
+
+// Ensure TLS version is set in connection string
+if (!uri.includes('tls=true')) {
+    uri = uri.includes('?') 
+        ? `${uri}&tls=true&tlsInsecure=false`
+        : `${uri}?tls=true&tlsInsecure=false`;
+}
+
+console.log('Using MongoDB connection string with TLS configuration');
 
 // MongoDB connection options for v6+
 const options = {
     maxPoolSize: 10,
     minPoolSize: 1,
     connectTimeoutMS: 30000,
-    socketTimeoutMS: 45000
+    socketTimeoutMS: 45000,
+    serverApi: {
+        version: '1',
+        strict: true,
+        deprecationErrors: true
+    }
 };
 
 const client = new MongoClient(uri, options);
@@ -59,6 +73,10 @@ async function connectToMongoDB() {
             await client.connect();
             console.log('Connected to MongoDB Atlas');
             
+            // Verify the connection
+            await client.db("admin").command({ ping: 1 });
+            console.log("Successfully pinged MongoDB deployment");
+            
             db = client.db('jimbando');
             console.log('Selected database: jimbando');
             
@@ -71,6 +89,7 @@ async function connectToMongoDB() {
             return true;
         } catch (err) {
             console.error(`Failed to connect to MongoDB (attempt ${6 - retries}/5):`, err);
+            console.error('Error details:', err.cause || err.message);
             retries--;
             if (retries === 0) {
                 console.error('All connection attempts failed.');
