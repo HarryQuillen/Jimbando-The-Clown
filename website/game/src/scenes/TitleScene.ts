@@ -1,14 +1,20 @@
+import { GameScene } from './GameScene';
+
 export class TitleScene extends Phaser.Scene {
     private spaceBar?: Phaser.Input.Keyboard.Key;
     private instructionsPanel?: Phaser.GameObjects.Container;
+    private usernameInput?: HTMLInputElement;
+    private submitButton?: HTMLButtonElement;
+    private usernameDOM?: Phaser.GameObjects.DOMElement;
+    private buttonDOM?: Phaser.GameObjects.DOMElement;
 
     constructor() {
         super({ key: 'TitleScene' });
     }
 
     preload() {
-        // Load the image with correct path and format
-        this.load.image('jimbando-face', 'assets/jimbando_image.jpg');
+        // Load the correct image for the title screen
+        this.load.image('jimbando-image', 'assets/jimbando-image.png');
     }
 
     create() {
@@ -18,9 +24,18 @@ export class TitleScene extends Phaser.Scene {
         // Set background color
         this.cameras.main.setBackgroundColor('#000000');
         
-        // Add Jimbando's face
-        const face = this.add.image(400, 300, 'jimbando-face');
-        face.setScale(0.5);
+        // Reset camera effects and fade in
+        this.cameras.main.resetFX();
+        this.cameras.main.fadeIn(1000);
+        
+        // Add Jimbando's image as full-screen background
+        const background = this.add.image(400, 300, 'jimbando-image');
+        background.setDisplaySize(800, 600); // Set to match game dimensions
+        background.setDepth(-1); // Ensure it's behind other elements
+
+        // Add semi-transparent overlay for better text visibility
+        const overlay = this.add.rectangle(400, 300, 800, 600, 0x000000, 0.3); // Reduced opacity
+        overlay.setDepth(-0.5);
 
         // Add title text with arcade style
         const title = this.add.text(400, 100, 'Jimbando\nThe Drunken Clown:\nRAMPAGE', {
@@ -32,15 +47,34 @@ export class TitleScene extends Phaser.Scene {
             strokeThickness: 8
         }).setOrigin(0.5);
 
-        // Add subtitle
-        this.add.text(400, 500, 'Press SPACE to start', {
-            fontFamily: 'Arial',
-            fontSize: '24px',
-            color: '#ffffff'
-        }).setOrigin(0.5);
+        // Create HTML input element
+        this.usernameInput = document.createElement('input');
+        this.usernameInput.type = 'text';
+        this.usernameInput.maxLength = 15;
+        this.usernameInput.style.width = '200px';
+        this.usernameInput.style.height = '30px';
+        this.usernameInput.style.fontSize = '20px';
+        this.usernameInput.style.textAlign = 'center';
+        this.usernameInput.placeholder = 'Enter Username';
+        
+        // Create submit button
+        this.submitButton = document.createElement('button');
+        this.submitButton.textContent = 'Start Game';
+        this.submitButton.style.width = '200px';
+        this.submitButton.style.height = '40px';
+        this.submitButton.style.fontSize = '20px';
+        this.submitButton.style.backgroundColor = '#ff0000';
+        this.submitButton.style.color = '#ffffff';
+        this.submitButton.style.border = 'none';
+        this.submitButton.style.cursor = 'pointer';
+        this.submitButton.style.marginTop = '10px';
+
+        // Add DOM elements to the scene
+        this.usernameDOM = this.add.dom(400, 350, this.usernameInput);
+        this.buttonDOM = this.add.dom(400, 400, this.submitButton);
 
         // Add instructions button
-        const instructionsButton = this.add.text(400, 550, '[ HOW TO PLAY ]', {
+        const instructionsButton = this.add.text(400, 500, '[ HOW TO PLAY ]', {
             fontFamily: 'Arial',
             fontSize: '20px',
             color: '#ffff00',
@@ -110,41 +144,37 @@ export class TitleScene extends Phaser.Scene {
             this.instructionsPanel?.setVisible(false);
         });
 
-        // Add blinking effect to the "Press SPACE" text
-        this.tweens.add({
-            targets: this.children.list[2],
-            alpha: 0,
-            duration: 500,
-            ease: 'Power2',
-            yoyo: true,
-            repeat: -1
-        });
-
-        // Create and store the space bar key
-        this.spaceBar = this.input.keyboard!.addKey(Phaser.Input.Keyboard.KeyCodes.SPACE);
-        
-        // Add one-time event listener
-        this.spaceBar.once('down', () => {
-            // Add fade out effect
-            this.cameras.main.fadeOut(1000);
-            this.time.delayedCall(1000, () => {
-                // Clean up before transitioning
-                if (this.spaceBar) {
-                    this.spaceBar.removeAllListeners();
+        // Handle start game button click
+        this.submitButton.onclick = () => {
+            const username = this.usernameInput?.value.trim() || 'Anonymous';
+            if (username) {
+                localStorage.setItem('currentUsername', username);
+                
+                // Clean up DOM elements first
+                if (this.usernameDOM) {
+                    this.usernameDOM.destroy();
                 }
-                this.input.keyboard?.removeAllKeys();
-                this.scene.start('GameScene');
-            });
-        });
+                if (this.buttonDOM) {
+                    this.buttonDOM.destroy();
+                }
+                
+                this.cameras.main.fadeOut(1000);
+                this.time.delayedCall(1000, () => {
+                    this.scene.start('GameScene');
+                });
+            }
+        };
 
         // Add fade-in effect
         this.cameras.main.fadeIn(1000);
     }
 
     shutdown() {
-        // Additional cleanup when scene shuts down
-        if (this.spaceBar) {
-            this.spaceBar.removeAllListeners();
+        if (this.usernameDOM) {
+            this.usernameDOM.destroy();
+        }
+        if (this.buttonDOM) {
+            this.buttonDOM.destroy();
         }
         this.input.keyboard?.removeAllKeys();
     }

@@ -2,7 +2,13 @@ import Phaser from 'phaser';
 import { TitleScene } from './scenes/TitleScene';
 import { GameScene } from './scenes/GameScene';
 import { DeathScene } from './scenes/DeathScene';
-import { UsernameScene } from './scenes/UsernameScene';
+
+// Define scene keys as constants to avoid typos
+const SCENES = {
+    TITLE: 'TitleScene',
+    GAME: 'GameScene',
+    DEATH: 'DeathScene'
+} as const;
 
 const config: Phaser.Types.Core.GameConfig = {
     type: Phaser.AUTO,
@@ -13,13 +19,17 @@ const config: Phaser.Types.Core.GameConfig = {
         default: 'arcade',
         arcade: {
             gravity: { x: 0, y: 0 },
-            debug: false
+            fps: 60
         }
     },
     input: {
         keyboard: true
     },
-    scene: [UsernameScene, TitleScene, GameScene, DeathScene]
+    dom: {
+        createContainer: true
+    },
+    scene: [TitleScene, GameScene, DeathScene]
 };
 
+export { SCENES };
 new Phaser.Game(config); 

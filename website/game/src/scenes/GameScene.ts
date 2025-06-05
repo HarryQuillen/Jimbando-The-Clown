@@ -1,35 +1,54 @@
 import { TitleScene } from './TitleScene';
 
+interface GameState {
+    score: number;
+    buzzLevel: number;
+    timeAlive: number;
+    isGameOver: boolean;
+    startTime: number;
+    speedBoostEndTime: number;
+    scoreMultiplierEndTime: number;
+}
+
 export class GameScene extends Phaser.Scene {
+    // Core game objects
     private player!: Phaser.Physics.Arcade.Sprite;
-    private buzzBar!: Phaser.GameObjects.Graphics;
-    private buzzLevel: number = 100;
-    private lastBuzzDecrease: number = 0;
-    private collectibles!: Phaser.Physics.Arcade.Group;
     private walls!: Phaser.Physics.Arcade.StaticGroup;
-    private speedBoostEndTime: number = 0;
-    private scoreMultiplierEndTime: number = 0;
-    private normalSpeed: number = 525;
-    private boostedSpeed: number = 1050;
-    private cursors!: Phaser.Types.Input.Keyboard.CursorKeys;
-    private startTime: number = 0;
+    private collectibles!: Phaser.Physics.Arcade.Group;
+    
+    // UI elements
+    private buzzBar!: Phaser.GameObjects.Graphics;
     private timerText!: Phaser.GameObjects.Text;
-    private score: number = 0;
-    private scoreText?: Phaser.GameObjects.Text;
+    private scoreText!: Phaser.GameObjects.Text;
     private multiplierText!: Phaser.GameObjects.Text;
-    private timeAlive: number = 0;
+    private buzzLabel!: Phaser.GameObjects.Text;
+    
+    // Input
+    private cursors!: Phaser.Types.Input.Keyboard.CursorKeys;
+    
+    // Game state
+    private state: GameState = {
+        score: 0,
+        buzzLevel: 100,
+        timeAlive: 0,
+        isGameOver: false,
+        startTime: 0,
+        speedBoostEndTime: 0,
+        scoreMultiplierEndTime: 0
+    };
+    
+    // Constants
+    private readonly NORMAL_SPEED: number = 525;
+    private readonly BOOSTED_SPEED: number = 1050;
+    private readonly BUZZ_DECREASE_RATE: number = 6;
+    private readonly BUZZ_DECREASE_INTERVAL: number = 1000;
+    private readonly MAX_COLLECTIBLES: number = 70;
+    private readonly WORLD_SIZE: number = 4000;
+    
+    private lastBuzzDecrease: number = 0;
 
     constructor() {
         super({ key: 'GameScene' });
-    }
-
-    init() {
-        // Reset all game variables
-        this.buzzLevel = 100;
-        this.lastBuzzDecrease = 0;
-        this.speedBoostEndTime = 0;
-        this.scoreMultiplierEndTime = 0;
-        this.score = 0;
     }
 
     preload() {
@@ -41,91 +60,154 @@ export class GameScene extends Phaser.Scene {
         this.load.svg('narcan', 'assets/narcan.svg');
     }
 
-    create() {
-        // Set start time
-        this.startTime = this.time.now;
-        
-        // Set background color
-        this.cameras.main.setBackgroundColor('#1a4d2e');
-        
-        // Create a larger world
-        this.physics.world.setBounds(0, 0, 2400, 2400);
-        
-        // Create walls for the maze
-        this.createMaze();
+    init() {
+        console.log("GameScene: init");
+        this.resetGameState();
+        this.cleanupResources();
+    }
 
-        // Create player container
-        const playerContainer = this.add.container(400, 400);
+    private resetGameState() {
+        this.state = {
+            score: 0,
+            buzzLevel: 100,
+            timeAlive: 0,
+            isGameOver: false,
+            startTime: 0,
+            speedBoostEndTime: 0,
+            scoreMultiplierEndTime: 0
+        };
+        this.lastBuzzDecrease = 0;
+    }
+
+    private cleanupResources() {
+        this.cleanupUI();
+        this.cleanupPhysics();
+        this.cleanupInput();
+    }
+
+    private cleanupUI() {
+        [this.buzzBar, this.timerText, this.scoreText, this.multiplierText, this.buzzLabel].forEach(element => {
+            if (element) {
+                element.destroy();
+            }
+        });
+    }
+
+    private cleanupPhysics() {
+        if (this.player) {
+            this.player.destroy();
+        }
+        if (this.walls) {
+            this.walls.destroy();
+        }
+        if (this.collectibles) {
+            this.collectibles.destroy();
+        }
+        if (this.physics.world) {
+            this.physics.world.colliders.destroy();
+            this.physics.world.bodies.clear();
+            this.physics.world.staticBodies.clear();
+        }
+    }
+
+    private cleanupInput() {
+        if (this.cursors) {
+            this.input.keyboard?.removeAllKeys();
+        }
+    }
+
+    create() {
+        console.log("GameScene: create starting");
         
-        // Create the player face sprite
-        const playerFace = this.add.sprite(0, 0, 'player-face');
-        playerFace.setScale(0.24);
-        playerFace.setOrigin(0.5, 0.5);
+        this.initializeWorld();
+        this.createPlayer();
+        this.createUI();
+        this.setupCollisions();
+        this.setupInput();
         
-        // Add sprite to container
-        playerContainer.add([playerFace]);
+        // Start game
+        this.state.startTime = this.time.now;
+        console.log("GameScene: create complete");
+    }
+
+    private initializeWorld() {
+        // Setup physics
+        this.walls = this.physics.add.staticGroup();
+        this.collectibles = this.physics.add.group();
         
-        // Create the physics sprite (invisible) for collision
+        // Setup camera
+        this.cameras.main.setBackgroundColor('#1a4d2e');
+        this.cameras.main.setBounds(0, 0, this.WORLD_SIZE, this.WORLD_SIZE);
+        
+        // Setup world bounds
+        this.physics.world.setBounds(0, 0, this.WORLD_SIZE, this.WORLD_SIZE);
+        
+        // Create maze
+        this.createMaze();
+    }
+
+    private createPlayer() {
         this.player = this.physics.add.sprite(400, 400, 'player-face');
-        this.player.setVisible(false);
+        this.player.setScale(0.24);
+        this.player.setOrigin(0.5, 0.5);
         this.player.setCollideWorldBounds(true);
         this.player.setBounce(0);
         
-        // Adjust the player's collision body to be circular
-        const bodyRadius = 32;
-        this.player.body!.setCircle(bodyRadius);
-        this.player.body!.setOffset(
-            (this.player.width - bodyRadius * 2) / 2,
-            (this.player.height - bodyRadius * 2) / 2
-        );
+        if (this.player.body) {
+            this.player.body.setCircle(150, 0, 20);
+        }
+        
+        this.cameras.main.startFollow(this.player, true);
+        this.cameras.main.setZoom(1);
+    }
 
-        // Create survival timer text (top right)
+    private createUI() {
+        // Timer
         this.timerText = this.add.text(690, 10, 'Time: 0:00', {
             fontFamily: 'Arial',
             fontSize: '20px',
             color: '#ffffff',
             stroke: '#000000',
             strokeThickness: 2
-        });
-        this.timerText.setScrollFactor(0);
+        }).setScrollFactor(0).setDepth(999);
 
-        // Create score text (top center)
+        // Score
         this.scoreText = this.add.text(400, 10, 'Score: 0', {
             fontFamily: 'Arial',
             fontSize: '32px',
             color: '#ffffff',
             stroke: '#000000',
             strokeThickness: 3
-        });
-        this.scoreText.setScrollFactor(0);
-        this.scoreText.setOrigin(0.5, 0);
-        this.scoreText.setDepth(999);  // Ensure it's always on top
+        }).setScrollFactor(0).setOrigin(0.5, 0).setDepth(999);
 
-        // Create multiplier text (below score)
+        // Multiplier
         this.multiplierText = this.add.text(400, 50, '5x MULTIPLIER!', {
             fontFamily: 'Arial',
             fontSize: '24px',
             color: '#ffff00',
             stroke: '#000000',
             strokeThickness: 3
-        });
-        this.multiplierText.setScrollFactor(0);
-        this.multiplierText.setOrigin(0.5, 0);
-        this.multiplierText.setDepth(999);  // Ensure it's always on top
-        this.multiplierText.setVisible(false);
+        }).setScrollFactor(0).setOrigin(0.5, 0).setDepth(999).setVisible(false);
 
-        // Setup camera to follow player
-        this.cameras.main.setBounds(0, 0, 2400, 2400);
-        this.cameras.main.startFollow(playerContainer, true);
-        this.cameras.main.setZoom(1);
-
-        // Create collectibles group
-        this.collectibles = this.physics.add.group();
-
-        // Create buzz bar
         this.createBuzzBar();
+    }
 
-        // Add collision detection
+    private createBuzzBar() {
+        this.buzzBar = this.add.graphics();
+        this.buzzBar.setScrollFactor(0).setDepth(999);
+        
+        this.buzzLabel = this.add.text(10, 32, 'BUZZ METER', {
+            fontFamily: 'Arial',
+            fontSize: '16px',
+            color: '#ffffff',
+            stroke: '#000000',
+            strokeThickness: 2
+        }).setScrollFactor(0).setDepth(999);
+        
+        this.updateBuzzBar();
+    }
+
+    private setupCollisions() {
         this.physics.add.collider(this.player, this.walls);
         this.physics.add.overlap(
             this.player,
@@ -134,141 +216,62 @@ export class GameScene extends Phaser.Scene {
             undefined,
             this
         );
-
-        // Spawn initial collectibles
+        
         this.spawnCollectibles();
+    }
 
-        // Set up keyboard controls
+    private setupInput() {
         this.cursors = this.input.keyboard!.createCursorKeys();
-        
-        // Store container reference for update
-        (this as any).playerContainer = playerContainer;
     }
 
-    private createMaze() {
-        this.walls = this.physics.add.staticGroup();
+    update(time: number, delta: number) {
+        if (!this.player || !this.cursors || this.state.isGameOver) return;
 
-        // Create outer walls - adjusted to ensure they're at the edges
-        this.createWall(0, 0, 2400, 40); // Top
-        this.createWall(0, 2360, 2400, 40); // Bottom
-        this.createWall(0, 0, 40, 2400); // Left
-        this.createWall(2360, 0, 40, 2400); // Right
-
-        // Create maze walls with more space between them
-        const mazeWalls = [
-            // Horizontal walls - adjusted positions
-            [300, 300, 400, 40],
-            [900, 300, 400, 40],
-            [500, 500, 800, 40],
-            [300, 700, 400, 40],
-            [900, 700, 400, 40],
-            [500, 900, 800, 40],
-            [300, 1100, 1000, 40],
-            [1500, 300, 400, 40],
-            [1500, 500, 400, 40],
-            [1500, 700, 400, 40],
-            [1500, 900, 400, 40],
-            // Vertical walls - adjusted positions
-            [300, 300, 40, 400],
-            [700, 500, 40, 400],
-            [1100, 300, 40, 400],
-            [1500, 500, 40, 400],
-            [1900, 300, 40, 600],
-            [300, 1100, 40, 400],
-            [700, 900, 40, 400],
-            [1100, 1100, 40, 400],
-            [1500, 900, 40, 400]
-        ];
-
-        mazeWalls.forEach(([x, y, width, height]) => {
-            this.createWall(x, y, width, height);
-        });
+        this.updatePlayerMovement();
+        this.updateGameState(time);
+        this.updateUI();
     }
 
-    private createWall(x: number, y: number, width: number, height: number) {
-        // Create the visual rectangle
-        const wall = this.add.rectangle(x + width/2, y + height/2, width, height, 0x964B00);
+    private updatePlayerMovement() {
+        const leftRight = this.cursors.left.isDown ? -1 : (this.cursors.right.isDown ? 1 : 0);
+        const upDown = this.cursors.up.isDown ? -1 : (this.cursors.down.isDown ? 1 : 0);
         
-        // Create the physics body
-        const wallBody = this.physics.add.existing(wall, true) as unknown as Phaser.GameObjects.Rectangle;
-        this.walls.add(wallBody);
-        
-        // Add a stroke to make walls more visible
-        const stroke = this.add.rectangle(x + width/2, y + height/2, width, height);
-        stroke.setStrokeStyle(2, 0x000000);
+        const currentSpeed = this.getCurrentSpeed();
+        this.player.setVelocity(
+            leftRight * currentSpeed,
+            upDown * currentSpeed
+        );
     }
 
-    update() {
+    private updateGameState(time: number) {
+        // Update time alive
+        this.state.timeAlive = time - this.state.startTime;
+        
+        // Update buzz level
+        if (time > this.lastBuzzDecrease + this.BUZZ_DECREASE_INTERVAL) {
+            this.state.buzzLevel = Math.max(0, this.state.buzzLevel - this.BUZZ_DECREASE_RATE);
+            this.lastBuzzDecrease = time;
+            
+            if (this.state.buzzLevel <= 0 && !this.state.isGameOver) {
+                this.initiateGameOver();
+            }
+        }
+    }
+
+    private updateUI() {
         // Update timer
-        const elapsedSeconds = Math.floor((this.time.now - this.startTime) / 1000);
+        const elapsedSeconds = Math.floor(this.state.timeAlive / 1000);
         const minutes = Math.floor(elapsedSeconds / 60);
         const seconds = elapsedSeconds % 60;
         this.timerText.setText(`Time: ${minutes}:${seconds.toString().padStart(2, '0')}`);
-
-        // Check if speed boost is active
-        const currentSpeed = this.time.now < this.speedBoostEndTime ? this.boostedSpeed : this.normalSpeed;
-
-        // Use cursors for movement
-        if (this.cursors.left.isDown) {
-            this.player.setVelocityX(-currentSpeed);
-            (this as any).playerContainer.x = this.player.x;
-        } else if (this.cursors.right.isDown) {
-            this.player.setVelocityX(currentSpeed);
-            (this as any).playerContainer.x = this.player.x;
-        } else {
-            this.player.setVelocityX(0);
-        }
-
-        if (this.cursors.up.isDown) {
-            this.player.setVelocityY(-currentSpeed);
-            (this as any).playerContainer.y = this.player.y;
-        } else if (this.cursors.down.isDown) {
-            this.player.setVelocityY(currentSpeed);
-            (this as any).playerContainer.y = this.player.y;
-        } else {
-            this.player.setVelocityY(0);
-        }
         
-        // Update container position to match physics sprite
-        (this as any).playerContainer.x = this.player.x;
-        (this as any).playerContainer.y = this.player.y;
-
         // Update buzz bar
         this.updateBuzzBar();
-
-        // Decrease buzz over time
-        const time = this.time.now;
-        if (time > this.lastBuzzDecrease + 1000) {
-            this.decreaseBuzzLevel();
-            this.lastBuzzDecrease = time;
-        }
-
-        // Check game over condition
-        if (this.buzzLevel <= 0) {
-            // Add fade out effect
-            this.cameras.main.fadeOut(1000, 255, 0, 0);
-            
-            // Wait for fade out to complete
-            this.time.delayedCall(1000, () => {
-                // Clean up the current scene
-                this.input.keyboard?.removeAllKeys();
-                this.events.removeAllListeners();
-                this.scene.stop();
-                // Start the death scene
-                this.scene.start('DeathScene');
-            });
-        }
-
+        
         // Update multiplier visibility
-        if (this.time.now >= this.scoreMultiplierEndTime && this.multiplierText.visible) {
+        if (this.time.now >= this.state.scoreMultiplierEndTime && this.multiplierText.visible) {
             this.multiplierText.setVisible(false);
         }
-    }
-
-    private createBuzzBar() {
-        this.buzzBar = this.add.graphics();
-        this.buzzBar.setScrollFactor(0); // Fix to camera
-        this.updateBuzzBar();
     }
 
     private updateBuzzBar() {
@@ -277,181 +280,51 @@ export class GameScene extends Phaser.Scene {
         // Background
         this.buzzBar.fillStyle(0x000000, 0.8);
         this.buzzBar.fillRect(10, 10, 200, 20);
-
+        
         // Buzz level
-        const color = this.buzzLevel > 30 ? 0x00ff00 : 0xff0000;
+        const color = this.state.buzzLevel > 30 ? 0x00ff00 : 0xff0000;
         this.buzzBar.fillStyle(color, 1);
-        const width = Math.max(0, Math.min(200, this.buzzLevel * 2));  // Ensure width is between 0 and 200
+        const width = Math.max(0, Math.min(200, this.state.buzzLevel * 2));
         this.buzzBar.fillRect(10, 10, width, 20);
-
-        // Add "BUZZ METER" label if it doesn't exist
-        if (!this.children.getByName('buzzLabel')) {
-            this.add.text(10, 32, 'BUZZ METER', {
-                fontFamily: 'Arial',
-                fontSize: '16px',
-                color: '#ffffff',
-                stroke: '#000000',
-                strokeThickness: 2
-            }).setName('buzzLabel').setScrollFactor(0);
-        }
     }
 
-    private decreaseBuzzLevel() {
-        // Decrease the reduction rate by 15% (from 7 to ~6)
-        this.buzzLevel = Math.max(0, this.buzzLevel - 6);
+    private getCurrentSpeed(): number {
+        return this.time.now < this.state.speedBoostEndTime ? 
+            this.BOOSTED_SPEED : this.NORMAL_SPEED;
     }
 
-    private handleCollectible(player: Phaser.Physics.Arcade.Sprite, collectible: Phaser.Physics.Arcade.Sprite) {
-        collectible.destroy();
+    private initiateGameOver() {
+        if (this.state.isGameOver) return;
         
-        let oldBuzzLevel = this.buzzLevel;  // Store old buzz level for comparison
+        this.state.isGameOver = true;
+        this.saveScore();
         
-        // Handle different types of collectibles
-        switch (collectible.texture.key) {
-            case 'beer':
-                // Increased potency by another 20% (from 3.125 to 3.75)
-                this.buzzLevel = Math.min(100, this.buzzLevel + 3.75);
-                // Add 10 points (multiplied if multiplier is active)
-                this.addPoints(10);
-                break;
-            case 'whiskey':
-                // Set buzz to maximum
-                this.buzzLevel = 100;
-                // Add 50 points (multiplied if multiplier is active)
-                this.addPoints(50);
-                break;
-            case 'bag':
-                // Speed boost for 7 seconds
-                this.speedBoostEndTime = this.time.now + 7000;
-                // Score multiplier for same duration
-                this.scoreMultiplierEndTime = this.time.now + 7000;
-                // Show multiplier text
-                this.multiplierText.setVisible(true);
-                // Decrease buzz by 20%
-                this.buzzLevel = Math.max(0, this.buzzLevel - 20);
-                break;
-            case 'narcan':
-                // Completely drain buzz
-                this.buzzLevel = 0;
-                break;
-        }
-
-        // Only update if buzz level changed
-        if (oldBuzzLevel !== this.buzzLevel) {
-            this.updateBuzzBar();
-        }
-
-        // Spawn new collectible
-        this.spawnCollectibles();
-    }
-
-    private spawnCollectibles() {
-        const maxCollectibles = 15;
-        const currentCollectibles = this.collectibles.getChildren().length;
-        const collectiblesToSpawn = maxCollectibles - currentCollectibles;
-
-        // Define safe zones where collectibles can spawn - expanded and more distributed
-        const safeZones = [
-            // Left side zones
-            { x1: 50, y1: 50, x2: 250, y2: 250 },
-            { x1: 50, y1: 800, x2: 250, y2: 1000 },
-            { x1: 50, y1: 1600, x2: 250, y2: 1800 },
-            
-            // Center-left zones
-            { x1: 600, y1: 400, x2: 800, y2: 600 },
-            { x1: 600, y1: 1200, x2: 800, y2: 1400 },
-            { x1: 600, y1: 1800, x2: 800, y2: 2000 },
-            
-            // Center-right zones
-            { x1: 1200, y1: 200, x2: 1400, y2: 400 },
-            { x1: 1200, y1: 1000, x2: 1400, y2: 1200 },
-            { x1: 1200, y1: 1600, x2: 1400, y2: 1800 },
-            
-            // Far right zones
-            { x1: 1800, y1: 400, x2: 2000, y2: 600 },
-            { x1: 1800, y1: 1200, x2: 2000, y2: 1400 },
-            { x1: 1800, y1: 1800, x2: 2000, y2: 2000 }
-        ];
-
-        for (let i = 0; i < collectiblesToSpawn; i++) {
-            // Pick a random safe zone
-            const zone = safeZones[Math.floor(Math.random() * safeZones.length)];
-            
-            // Generate position within the safe zone
-            const x = Phaser.Math.Between(zone.x1, zone.x2);
-            const y = Phaser.Math.Between(zone.y1, zone.y2);
-
-            // Randomly choose item type with adjusted spawn rates
-            const rand = Math.random();
-            let type;
-            if (rand < 0.95) {  // Beer at 95%
-                type = 'beer';
-            } else if (rand < 0.985) {  // Whiskey at 3.5%
-                type = 'whiskey';
-            } else if (rand < 0.99) {  // Bags at 0.5%
-                type = 'bag';
-            } else {  // Narcan increased to 1% (from 0.5%)
-                type = 'narcan';
+        // Create transition overlay
+        const overlay = this.add.rectangle(0, 0, this.WORLD_SIZE, this.WORLD_SIZE, 0xff0000)
+            .setDepth(9999)
+            .setOrigin(0, 0)
+            .setAlpha(0)
+            .setScrollFactor(0);
+        
+        // Transition to death scene
+        this.tweens.add({
+            targets: overlay,
+            alpha: 1,
+            duration: 1000,
+            onComplete: () => {
+                this.cleanupResources();
+                overlay.destroy();
+                this.scene.start('DeathScene', {
+                    score: this.state.score,
+                    timeAlive: Math.floor(this.state.timeAlive / 1000)
+                });
             }
-
-            const collectible = this.physics.add.sprite(x, y, type);
-            collectible.setScale(0.8);
-            if (type === 'bag') {
-                collectible.setScale(0.9);
-            } else if (type === 'narcan') {
-                collectible.setScale(0.7);  // Slightly smaller scale for narcan
-            }
-            this.collectibles.add(collectible);
-        }
-    }
-
-    private addPoints(basePoints: number) {
-        const multiplier = this.time.now < this.scoreMultiplierEndTime ? 5 : 1;
-        this.score += basePoints * multiplier;
-        this.scoreText?.setText(`Score: ${this.score}`);
-    }
-
-    private collectBeer(beer: Phaser.GameObjects.Sprite) {
-        this.buzzLevel += 4.5;
-        this.score += 10;
-        this.updateScore();
-        // ... existing code ...
-    }
-
-    private collectWhiskey(whiskey: Phaser.GameObjects.Sprite) {
-        this.buzzLevel = 100;
-        this.score += 50;
-        this.updateScore();
-        // ... existing code ...
-    }
-
-    private collectBag(bag: Phaser.GameObjects.Sprite) {
-        this.buzzLevel *= 0.8;
-        this.score += 5;
-        this.updateScore();
-        // ... existing code ...
-    }
-
-    private updateScore() {
-        this.scoreText?.setText(`Score: ${this.score}`);
-    }
-
-    private gameOver() {
-        // Get current username
-        const username = localStorage.getItem('currentUsername') || 'Anonymous';
-        
-        // Save score to leaderboard
-        this.saveScore(username, this.score);
-        
-        // Pass score to death scene
-        this.scene.start('DeathScene', { 
-            score: this.score,
-            timeAlive: this.timeAlive
         });
     }
 
-    private async saveScore(username: string, score: number) {
+    private async saveScore() {
         try {
+            const username = localStorage.getItem('currentUsername') || 'Anonymous';
             const response = await fetch('https://jimbando-the-clown.onrender.com/scores', {
                 method: 'POST',
                 headers: {
@@ -459,7 +332,7 @@ export class GameScene extends Phaser.Scene {
                 },
                 body: JSON.stringify({
                     username,
-                    score,
+                    score: this.state.score,
                     timestamp: new Date().toISOString()
                 })
             });
@@ -470,5 +343,166 @@ export class GameScene extends Phaser.Scene {
         } catch (error) {
             console.error('Error saving score:', error);
         }
+    }
+
+    private createMaze() {
+        // Create outer walls
+        this.createWall(0, 0, 4000, 40); // Top
+        this.createWall(0, 3960, 4000, 40); // Bottom
+        this.createWall(0, 0, 40, 4000); // Left
+        this.createWall(3960, 0, 40, 4000); // Right
+
+        // Create a more maze-like structure with bends and multiple paths
+        const mazeWalls = [
+            // Horizontal segments (with gaps)
+            [400, 400, 600, 40], [1200, 400, 400, 40], [1800, 400, 400, 40], [2400, 400, 400, 40], [3000, 400, 600, 40],
+            [400, 800, 400, 40], [900, 800, 400, 40], [1400, 800, 400, 40], [1900, 800, 400, 40], [2400, 800, 400, 40], [2900, 800, 400, 40], [3400, 800, 400, 40],
+            [400, 1200, 600, 40], [1200, 1200, 400, 40], [1800, 1200, 400, 40], [2400, 1200, 400, 40], [3000, 1200, 600, 40],
+            [400, 1600, 400, 40], [900, 1600, 400, 40], [1400, 1600, 400, 40], [1900, 1600, 400, 40], [2400, 1600, 400, 40], [2900, 1600, 400, 40], [3400, 1600, 400, 40],
+            [400, 2000, 600, 40], [1200, 2000, 400, 40], [1800, 2000, 400, 40], [2400, 2000, 400, 40], [3000, 2000, 600, 40],
+            [400, 2400, 400, 40], [900, 2400, 400, 40], [1400, 2400, 400, 40], [1900, 2400, 400, 40], [2400, 2400, 400, 40], [2900, 2400, 400, 40], [3400, 2400, 400, 40],
+            [400, 2800, 600, 40], [1200, 2800, 400, 40], [1800, 2800, 400, 40], [2400, 2800, 400, 40], [3000, 2800, 600, 40],
+            [400, 3200, 400, 40], [900, 3200, 400, 40], [1400, 3200, 400, 40], [1900, 3200, 400, 40], [2400, 3200, 400, 40], [2900, 3200, 400, 40], [3400, 3200, 400, 40],
+            [400, 3600, 600, 40], [1200, 3600, 400, 40], [1800, 3600, 400, 40], [2400, 3600, 400, 40], [3000, 3600, 600, 40],
+            // Vertical segments (with gaps)
+            [400, 400, 40, 400], [400, 900, 40, 400], [400, 1400, 40, 400], [400, 1900, 40, 400], [400, 2400, 40, 400], [400, 2900, 40, 400], [400, 3400, 40, 400],
+            [800, 800, 40, 400], [800, 1300, 40, 400], [800, 1800, 40, 400], [800, 2300, 40, 400], [800, 2800, 40, 400], [800, 3300, 40, 400],
+            [1200, 400, 40, 400], [1200, 900, 40, 400], [1200, 1400, 40, 400], [1200, 1900, 40, 400], [1200, 2400, 40, 400], [1200, 2900, 40, 400], [1200, 3400, 40, 400],
+            [1600, 800, 40, 400], [1600, 1300, 40, 400], [1600, 1800, 40, 400], [1600, 2300, 40, 400], [1600, 2800, 40, 400], [1600, 3300, 40, 400],
+            [2000, 400, 40, 400], [2000, 900, 40, 400], [2000, 1400, 40, 400], [2000, 1900, 40, 400], [2000, 2400, 40, 400], [2000, 2900, 40, 400], [2000, 3400, 40, 400],
+            [2400, 800, 40, 400], [2400, 1300, 40, 400], [2400, 1800, 40, 400], [2400, 2300, 40, 400], [2400, 2800, 40, 400], [2400, 3300, 40, 400],
+            [2800, 400, 40, 400], [2800, 900, 40, 400], [2800, 1400, 40, 400], [2800, 1900, 40, 400], [2800, 2400, 40, 400], [2800, 2900, 40, 400], [2800, 3400, 40, 400],
+            [3200, 800, 40, 400], [3200, 1300, 40, 400], [3200, 1800, 40, 400], [3200, 2300, 40, 400], [3200, 2800, 40, 400], [3200, 3300, 40, 400],
+            [3600, 400, 40, 400], [3600, 900, 40, 400], [3600, 1400, 40, 400], [3600, 1900, 40, 400], [3600, 2400, 40, 400], [3600, 2900, 40, 400], [3600, 3400, 40, 400],
+        ];
+
+        mazeWalls.forEach(([x, y, width, height]) => {
+            this.createWall(x, y, width, height);
+        });
+    }
+
+    private createWall(x: number, y: number, width: number, height: number) {
+        // Create a static sprite for the wall
+        const wall = this.add.rectangle(x + width/2, y + height/2, width, height, 0x964B00);
+        
+        // Enable physics on the wall
+        this.physics.add.existing(wall, true); // true makes it static
+        
+        // Get the physics body and ensure it matches the wall size
+        const body = wall.body as Phaser.Physics.Arcade.Body;
+        body.setSize(width, height);
+        body.setOffset(0, 0);
+        
+        // Add to walls group
+        this.walls.add(wall);
+        
+        return wall;
+    }
+
+    private handleCollectible(player: Phaser.Physics.Arcade.Sprite, collectible: Phaser.Physics.Arcade.Sprite) {
+        collectible.destroy();
+        
+        let oldBuzzLevel = this.state.buzzLevel;  // Store old buzz level for comparison
+        
+        // Handle different types of collectibles
+        switch (collectible.texture.key) {
+            case 'beer':
+                // Increased potency by another 20% (from 3.125 to 3.75)
+                this.state.buzzLevel = Math.min(100, this.state.buzzLevel + 3.75);
+                // Add 10 points (multiplied if multiplier is active)
+                this.addPoints(10);
+                break;
+            case 'whiskey':
+                // Set buzz to maximum
+                this.state.buzzLevel = 100;
+                // Add 50 points (multiplied if multiplier is active)
+                this.addPoints(50);
+                break;
+            case 'bag':
+                // Speed boost for 7 seconds
+                this.state.speedBoostEndTime = this.time.now + 7000;
+                // Score multiplier for same duration
+                this.state.scoreMultiplierEndTime = this.time.now + 7000;
+                // Show multiplier text
+                this.multiplierText.setVisible(true);
+                // Decrease buzz by 20%
+                this.state.buzzLevel = Math.max(0, this.state.buzzLevel - 20);
+                break;
+            case 'narcan':
+                // Completely drain buzz
+                this.state.buzzLevel = 0;
+                break;
+        }
+
+        // Only update if buzz level changed
+        if (oldBuzzLevel !== this.state.buzzLevel) {
+            this.updateBuzzBar();
+        }
+
+        // Spawn new collectible
+        this.spawnCollectibles();
+    }
+
+    private spawnCollectibles() {
+        const currentCollectibles = this.collectibles.getChildren().length;
+        const collectiblesToSpawn = this.MAX_COLLECTIBLES - currentCollectibles;
+        // Expanded safe zones for larger map
+        const safeZones = [
+            // Corners
+            { x1: 100, y1: 100, x2: 600, y2: 600 },
+            { x1: 3400, y1: 100, x2: 3900, y2: 600 },
+            { x1: 100, y1: 3400, x2: 600, y2: 3900 },
+            { x1: 3400, y1: 3400, x2: 3900, y2: 3900 },
+            // Edges
+            { x1: 1800, y1: 100, x2: 2200, y2: 600 },
+            { x1: 100, y1: 1800, x2: 600, y2: 2200 },
+            { x1: 3400, y1: 1800, x2: 3900, y2: 2200 },
+            { x1: 1800, y1: 3400, x2: 2200, y2: 3900 },
+            // Center quadrants
+            { x1: 1000, y1: 1000, x2: 1500, y2: 1500 },
+            { x1: 2500, y1: 1000, x2: 3000, y2: 1500 },
+            { x1: 1000, y1: 2500, x2: 1500, y2: 3000 },
+            { x1: 2500, y1: 2500, x2: 3000, y2: 3000 },
+            // Center
+            { x1: 1800, y1: 1800, x2: 2200, y2: 2200 },
+        ];
+        for (let i = 0; i < collectiblesToSpawn; i++) {
+            let tries = 0;
+            let valid = false;
+            let x = 0, y = 0;
+            let collectible: Phaser.Physics.Arcade.Sprite | null = null;
+            while (!valid && tries < 10) {
+                const zone = safeZones[Math.floor(Math.random() * safeZones.length)];
+                x = Phaser.Math.Between(zone.x1, zone.x2);
+                y = Phaser.Math.Between(zone.y1, zone.y2);
+                const rand = Math.random();
+                let type;
+                if (rand < 0.93) {
+                    type = 'beer';
+                } else if (rand < 0.965) {
+                    type = 'whiskey';
+                } else if (rand < 0.99) {
+                    type = 'bag';
+                } else {
+                    type = 'narcan';
+                }
+                collectible = this.physics.add.sprite(x, y, type);
+                collectible.setScale(type === 'bag' ? 0.9 : type === 'narcan' ? 0.7 : 0.8);
+                valid = !this.physics.overlap(collectible, this.walls);
+                if (!valid) {
+                    collectible.destroy();
+                }
+                tries++;
+            }
+            if (valid && collectible) {
+                this.collectibles.add(collectible);
+            }
+        }
+    }
+
+    private addPoints(basePoints: number) {
+        const multiplier = this.time.now < this.state.scoreMultiplierEndTime ? 5 : 1;
+        this.state.score += basePoints * multiplier;
+        this.scoreText?.setText(`Score: ${this.state.score}`);
     }
 } 
