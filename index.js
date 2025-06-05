@@ -19,28 +19,48 @@ if (!uri) {
     process.exit(1);
 }
 
-const client = new MongoClient(uri);
+// MongoDB connection options
+const options = {
+    useNewUrlParser: true,
+    useUnifiedTopology: true,
+    maxPoolSize: 10,
+    serverSelectionTimeoutMS: 5000,
+    socketTimeoutMS: 45000,
+};
+
+const client = new MongoClient(uri, options);
 let db;
 
 // Connect to MongoDB before starting the server
 async function startServer() {
-    try {
-        await client.connect();
-        console.log('Connected to MongoDB Atlas');
-        
-        db = client.db('jimbando');
-        
-        // Create indexes if they don't exist
-        await db.collection('scores').createIndex({ score: -1 });
-        await db.collection('scores').createIndex({ timestamp: 1 });
-        
-        // Start listening only after successful database connection
-        app.listen(PORT, () => {
-            console.log(`Leaderboard server running on port ${PORT}`);
-        });
-    } catch (err) {
-        console.error('Failed to connect to MongoDB:', err);
-        process.exit(1);
+    let retries = 5;
+    while (retries > 0) {
+        try {
+            console.log('Attempting to connect to MongoDB Atlas...');
+            await client.connect();
+            console.log('Connected to MongoDB Atlas');
+            
+            db = client.db('jimbando');
+            
+            // Create indexes if they don't exist
+            await db.collection('scores').createIndex({ score: -1 });
+            await db.collection('scores').createIndex({ timestamp: 1 });
+            
+            // Start listening only after successful database connection
+            app.listen(PORT, () => {
+                console.log(`Leaderboard server running on port ${PORT}`);
+            });
+            return; // Successfully connected and started
+        } catch (err) {
+            console.error(`Failed to connect to MongoDB (attempt ${6 - retries}/5):`, err);
+            retries--;
+            if (retries === 0) {
+                console.error('All connection attempts failed. Exiting.');
+                process.exit(1);
+            }
+            // Wait 5 seconds before retrying
+            await new Promise(resolve => setTimeout(resolve, 5000));
+        }
     }
 }
 
