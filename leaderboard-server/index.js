@@ -2,7 +2,6 @@ import express from 'express';
 import cors from 'cors';
 import { MongoClient } from 'mongodb';
 import dotenv from 'dotenv';
-import tls from 'tls';
 
 // Load environment variables
 dotenv.config();
@@ -32,18 +31,12 @@ if (!uri) {
     process.exit(1);
 }
 
-// MongoDB connection options with TLS configuration
+// MongoDB connection options for v6+
 const options = {
-    tls: true,
-    tlsCAFile: undefined,
-    connectTimeoutMS: 30000,
-    socketTimeoutMS: 45000,
-    ssl: true,
-    sslValidate: true,
-    directConnection: false,
-    replicaSet: 'atlas-11yg65-shard-0',
+    maxPoolSize: 10,
     minPoolSize: 1,
-    maxPoolSize: 10
+    connectTimeoutMS: 30000,
+    socketTimeoutMS: 45000
 };
 
 const client = new MongoClient(uri, options);
