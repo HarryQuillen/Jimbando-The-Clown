@@ -7,176 +7,37 @@ import dotenv from 'dotenv';
 dotenv.config();
 
 const app = express();
-
-// Get port from environment variable
-const PORT = parseInt(process.env.PORT || '10000', 10);
-
-console.log('Starting server initialization...');
-console.log(`PORT environment variable: ${process.env.PORT}`);
-console.log(`Using port: ${PORT}`);
+const PORT = process.env.PORT || 10000;
 
 app.use(cors());
 app.use(express.json());
 
-// Health check endpoint
+// Initialize database variables
+let client = null;
+let db = null;
+
+// Health check endpoint - respond immediately, don't wait for MongoDB
 app.get('/', (req, res) => {
     res.json({ 
         status: 'ok',
-        version: '1.0.1',
         serverTime: new Date().toISOString()
     });
 });
 
-// MongoDB connection
-let uri = process.env.MONGODB_URI;
-if (!uri) {
-    console.error('MONGODB_URI environment variable is not set');
-    process.exit(1);
-}
-
-// Ensure TLS version is set in connection string
-if (!uri.includes('tls=true')) {
-    uri = uri.includes('?') 
-        ? `${uri}&tls=true&tlsInsecure=false`
-        : `${uri}?tls=true&tlsInsecure=false`;
-}
-
-console.log('Using MongoDB connection string with TLS configuration');
-
-// MongoDB connection options for v6+
-const options = {
-    maxPoolSize: 10,
-    minPoolSize: 1,
-    connectTimeoutMS: 30000,
-    socketTimeoutMS: 45000,
-    serverApi: {
-        version: '1',
-        strict: true,
-        deprecationErrors: true
-    }
-};
-
-const client = new MongoClient(uri, options);
-let db;
-let isConnecting = false;
-let server;
-
-// Connect to MongoDB
-async function connectToMongoDB() {
-    if (isConnecting) return;
-    isConnecting = true;
-    
-    let retries = 5;
-    while (retries > 0) {
-        try {
-            console.log('Attempting to connect to MongoDB Atlas...');
-            await client.connect();
-            console.log('Connected to MongoDB Atlas');
-            
-            // Verify the connection
-            await client.db("admin").command({ ping: 1 });
-            console.log("Successfully pinged MongoDB deployment");
-            
-            db = client.db('jimbando');
-            console.log('Selected database: jimbando');
-            
-            // Create indexes if they don't exist
-            await db.collection('scores').createIndex({ score: -1 });
-            await db.collection('scores').createIndex({ timestamp: 1 });
-            console.log('Created indexes on scores collection');
-            
-            isConnecting = false;
-            return true;
-        } catch (err) {
-            console.error(`Failed to connect to MongoDB (attempt ${6 - retries}/5):`, err);
-            console.error('Error details:', err.cause || err.message);
-            retries--;
-            if (retries === 0) {
-                console.error('All connection attempts failed.');
-                isConnecting = false;
-                return false;
-            }
-            await new Promise(resolve => setTimeout(resolve, 5000));
-        }
-    }
-}
-
-// Start the server
-async function startServer() {
-    try {
-        // Try to connect to MongoDB first
-        const connected = await connectToMongoDB();
-        if (!connected) {
-            console.error('Could not establish initial MongoDB connection');
-            process.exit(1);
-        }
-        
-        // Create server but don't start listening yet
-        server = app.listen(PORT, '0.0.0.0', () => {
-            console.log(`Server is running at http://0.0.0.0:${PORT}`);
-            console.log('Server is listening on all available network interfaces');
-        });
-
-        // Log any server errors
-        server.on('error', (error) => {
-            console.error('Server error:', error);
-            if (error.code === 'EADDRINUSE') {
-                console.error(`Port ${PORT} is already in use`);
-            }
-            process.exit(1);
-        });
-
-        // Handle server shutdown
-        process.on('SIGTERM', () => {
-            console.log('SIGTERM received. Starting graceful shutdown...');
-            shutdown();
-        });
-
-        process.on('SIGINT', () => {
-            console.log('SIGINT received. Starting graceful shutdown...');
-            shutdown();
-        });
-
-    } catch (err) {
-        console.error('Failed to start server:', err);
-        process.exit(1);
-    }
-}
-
-// Graceful shutdown function
-async function shutdown() {
-    try {
-        if (server) {
-            await new Promise((resolve) => {
-                server.close(resolve);
-            });
-            console.log('Server closed');
-        }
-        
-        if (client) {
-            await client.close();
-            console.log('MongoDB connection closed');
-        }
-        
-        process.exit(0);
-    } catch (err) {
-        console.error('Error during shutdown:', err);
-        process.exit(1);
-    }
-}
+// MongoDB connection status endpoint
+app.get('/db-status', (req, res) => {
+    res.json({ 
+        connected: db !== null 
+    });
+});
 
 // Middleware to check database connection
 const checkDbConnection = async (req, res, next) => {
     if (!db) {
-        try {
-            const connected = await connectToMongoDB();
-            if (!connected) {
-                return res.status(500).json({ error: 'Database connection not established' });
-            }
-        } catch (error) {
-            console.error('Error reconnecting to database:', error);
-            return res.status(500).json({ error: 'Database connection failed' });
-        }
+        return res.status(503).json({ 
+            error: 'Database connection not yet established',
+            message: 'The server is still connecting to the database. Please try again in a few moments.'
+        });
     }
     next();
 };
@@ -218,6 +79,57 @@ app.get('/scores/top', checkDbConnection, async (req, res) => {
     }
 });
 
-// Start the server
-console.log('Calling startServer()...');
-startServer(); 
+// Start server first
+const server = app.listen(PORT, '0.0.0.0', () => {
+    console.log(`Server is running on port ${PORT}`);
+});
+
+// Then connect to MongoDB in the background
+async function connectToMongoDB() {
+    const uri = process.env.MONGODB_URI;
+    if (!uri) {
+        console.error('MONGODB_URI environment variable is not set');
+        return;
+    }
+
+    try {
+        console.log('Attempting to connect to MongoDB Atlas...');
+        client = new MongoClient(uri, {
+            maxPoolSize: 10,
+            minPoolSize: 1,
+            connectTimeoutMS: 30000,
+            socketTimeoutMS: 45000
+        });
+
+        await client.connect();
+        console.log('Connected to MongoDB Atlas');
+        
+        db = client.db('jimbando');
+        console.log('Selected database: jimbando');
+        
+        // Create indexes if they don't exist
+        await db.collection('scores').createIndex({ score: -1 });
+        await db.collection('scores').createIndex({ timestamp: 1 });
+        console.log('Created indexes on scores collection');
+    } catch (err) {
+        console.error('Failed to connect to MongoDB:', err);
+        // Don't exit the process, just log the error
+        // The server will continue running and return appropriate errors for database operations
+        setTimeout(connectToMongoDB, 5000); // Try to reconnect in 5 seconds
+    }
+}
+
+// Handle graceful shutdown
+process.on('SIGTERM', () => {
+    console.log('SIGTERM received. Starting graceful shutdown...');
+    server.close(async () => {
+        if (client) {
+            await client.close();
+            console.log('MongoDB connection closed');
+        }
+        process.exit(0);
+    });
+});
+
+// Start MongoDB connection after server is running
+connectToMongoDB(); 
