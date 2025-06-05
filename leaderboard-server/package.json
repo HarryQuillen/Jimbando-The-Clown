@@ -5,14 +5,10 @@
   "private": true,
   "main": "index.js",
   "engines": {
-    "node": ">=18.0.0",
-    "yarn": "1.x"
+    "node": ">=18.0.0"
   },
   "scripts": {
     "start": "node index.js",
-    "prebuild": "echo 'Installing dependencies...'",
-    "build": "yarn install --frozen-lockfile",
-    "postbuild": "echo 'Build completed successfully'",
     "dev": "nodemon index.js"
   },
   "keywords": [],
