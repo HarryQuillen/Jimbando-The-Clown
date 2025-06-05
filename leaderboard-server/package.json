@@ -5,17 +5,18 @@
   "private": true,
   "main": "index.js",
   "engines": {
-    "node": ">=18.0.0"
+    "node": ">=18.0.0",
+    "yarn": "1.x"
   },
   "scripts": {
     "start": "node index.js",
-    "build": "echo 'No build step needed'",
+    "build": "yarn install",
     "dev": "nodemon index.js"
   },
   "keywords": [],
   "author": "",
   "license": "ISC",
-  "description": "",
+  "description": "Leaderboard server for Jimbando the Clown game",
   "dependencies": {
     "cors": "^2.8.5",
     "dotenv": "^16.4.5",
